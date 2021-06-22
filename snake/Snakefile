@@ -1,0 +1,58 @@
+shell.prefix("set -o pipefail; ")
+shell.prefix("set -e; ")
+shell.prefix("set -u; ")
+
+configfile: "config.json"
+localrules: deltasvm_meta
+
+def CYCLE0(wildcards):
+    tmp = wildcards.id.split("_")
+    return "selex_seqs/ZeroCycle_{0}_0_0.flt.fa".format(tmp[4].replace(".fastq.gz", ""))
+rule fastas:
+     input:
+         expand("selex_seqs/{id}.flt.subsample_{num}.fa", id=config["exps"], num=["20000"]),
+         expand("random_seqs/{id}.neg.flt.subsample_{num}.fa", id=config["exps"], num=["20000"])
+
+#Rules
+rule fastqTofasta:
+    input:
+        "fastq/{id}.fastq.gz"
+    output:
+        "selex_seqs/{id}.flt.fa"
+    params:
+        jobname = "{id}.fastqTofasta"
+    shell:
+        """
+        zcat {input} | awk '{{if(NR%4==1) {{printf(">%s\\n",substr($0,2));}} else if(NR%4==2) print;}}' > {output}
+        """
+
+rule complement_fasta:
+    input:
+        seq = "selex_seqs/{id}.flt.fa",
+        fa = CYCLE0
+    output:
+        "random_seqs/{id}.neg.flt.fa"
+    params:
+        comp = config["script"]["comp"],
+        jobname = "{id}.complement"
+    shell:
+        """
+        python {params.comp} -f {input.fa} -s {input.seq} -o {output}
+        """
+
+rule subsample_fasta:
+    input:
+        "{seq}/{id}.flt.fa"
+    output:
+        "{seq}/{id}.flt.subsample_{num}.fa"
+    params:
+        subsample = config["software"]["subsample"],
+        jobname = "{id}.subsample_{num}"
+    shell:
+        """
+        if [ $(cat {input} | wc -l) -lt 20000 ]; then
+            ln -s {input} {output}
+        else
+            {params.subsample} {input} {wildcards.num} > {output}
+        fi
+        """

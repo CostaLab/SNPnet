@@ -1,0 +1,33 @@
+{
+    "references": {
+        "ID": "hg19",
+        "fasta": "hg19.fa",
+        "gs": "hg19.chrom.size"
+    },
+    "software": {
+        "gkmtrain" : "bin/gkmtrain",
+        "subsample" : "bin/fasta-subsample",
+        "gkmpredict" : "bin/gkmpredict",
+        "deltasvm": "scripts/deltasvm.pl"
+    },
+    "script": {
+        "comp": "scripts/complment_seq.py",
+        "uniq": "scripts/unique_fasta.py",
+		"pbs_test": "scripts/pbs_test_single_curve.R",
+        "pbs_threshold": "scripts/pbs_threshold_pbsnp.R"
+    },
+    "gkm": {
+        "params":{
+            "10": "-l 10 -k 6 -d 3",
+            "9": "-l 9 -k 6 -d 3",
+            "8": "-l 8 -k 5 -d 3",
+            "7": "-l 7 -k 4 -d 3"
+        }
+    },
+    "exps": {
+        "DUXA_eDBD_2_KP_TGTGAT40NGCA": "",
+        "DUXA_eDBD_3_KP_TGTGAT40NGCA": "",
+        "DUXA_eDBD_4_KP_TGTGAT40NGCA": "",
+        "DUXA_eDBD_1_KP_TGTGAT40NGCA": ""
+    }
+}

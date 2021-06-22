@@ -127,3 +127,28 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+#ignore temporary dsvm folders
+deltasvm/data/*
+deltasvm/input_tf/*
+deltasvm/log/*
+deltasvm/out/*
+deltasvm/tmp/*
+deltasvm/resources/*
+deltasvm/obs_threshold/*
+deltasvm/pbs_threshold/*
+deltasvm/gkmsvm_models/*
+
+#ignore temporary dsvm folders
+snake/fastq/*
+snake/.snakemake/log/*
+snake/.snakemake/metadata/*
+snake/random_seqs/*
+snake/selex_seqs/*
+#!snake/random_seqs/DUXA_eDBD_4_KP_TGTGAT40NGCA.neg.flt.fa
+#!snake/selex_seqs/DUXA_eDBD_4_KP_TGTGAT40NGCA.flt.fa
+
+
+
+deltasvm/novel_batch.csv
+deltasvm/old_batch.csv
