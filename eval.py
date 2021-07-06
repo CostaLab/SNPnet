@@ -89,14 +89,14 @@ def print_accuary_scores(df):
     #fig.tight_layout()
     plt.show()
 
-def eval_binding_acc(tf,net,batchsize=16):
+def eval_binding_acc(tf,net,batchsize=16,subfolder=""):
     print("---",tf,"---")
     dsvm_res = get_results(tf)
     new_binding = get_binding_eval_data("deltasvm/novel_batch.csv",dsvm_res)
     new_binding.drop(["oligo_auc","oligo_pval","pbs","pbs","allele1_bind","allele2_bind"],axis=1,inplace=True)
 
     net = net()    
-    net.load_state_dict(torch.load('tf_net/models/'+tf+'.pth'))
+    net.load_state_dict(torch.load('tf_net/models/'+subfolder+tf+'.pth'))
     tf_net_result = get_eval_results(new_binding,net,batchsize=batchsize)
 
     nbc = new_binding.merge(tf_net_result,how='inner',on=["seq"])    
