@@ -61,7 +61,7 @@ def print_accuary_scores(df):
     print("TF_net accuracy ",round(accuracy_tf_net,3),"%")
     print_class_acc(df,"tf_net")
 
-    labels = ['0','1']
+    labels = ['1','0']
     binding = [len(df[df["binding"]==True]),len(df[df["binding"]==False])]
     deltasvm = [len(df[(df["binding"]==True) & (df["binding"]==df["ref_binding"])]),len(df[(df["binding"]==False) & (df["binding"]==df["ref_binding"])])]
     snpnet = [len(df[(df["binding"]==True) & (df["binding"]==df["tf_net"])]),len(df[(df["binding"]==False) & (df["binding"]==df["tf_net"])])]
