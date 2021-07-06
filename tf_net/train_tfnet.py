@@ -14,10 +14,11 @@ import numpy as np
 
 from torch.utils.data import Dataset
 import torch.optim as optim
+import matplotlib.pyplot as plt
 
 class SeqDataset(Dataset):
     def __init__(self, data):
-        self.data = data
+        self.data = data        
 
     def __len__(self):
         return len(self.data)
@@ -39,16 +40,20 @@ def seq_to_tensor(seq):
     return targets.reshape(1,40,4)
 
 
+#TODO Validate sample correctness
 def create_data(tf,subsample=False):
     os.chdir('..')
-    pos_file = glob.glob('snake/selex_seqs/'+tf+'*_4_*.flt.fa')
-    pos_file = pos_file[0]
-    neg_file = glob.glob('snake/random_seqs/'+tf+'*_4_*.flt.fa')
-    neg_file = neg_file[0]
-
+    try:
+        pos_file = glob.glob('snake/selex_seqs/'+tf+'*_4_*.flt.fa')
+        pos_file = pos_file[0]
+        neg_file = glob.glob('snake/random_seqs/'+tf+'*_4_*.flt.fa')
+        neg_file = neg_file[0]
+    except:
+        os.chdir('tf_net')
+    
     if subsample:
-        pos_set = pd.read_csv(pos_file,header=None).iloc[1:2000:2]
-        neg_set = pd.read_csv(neg_file,header=None).iloc[1:2000:2]
+        pos_set = pd.read_csv(pos_file,header=None).iloc[1:20000:2]
+        neg_set = pd.read_csv(neg_file,header=None).iloc[1:20000:2]
     else:
         pos_set = pd.read_csv(pos_file,header=None).iloc[1::2]
         neg_set = pd.read_csv(neg_file,header=None).iloc[1::2]
@@ -59,55 +64,85 @@ def create_data(tf,subsample=False):
     neg_set["seq"] = neg_set.apply(lambda x: seq_to_tensor(x[0]), axis=1)
     pos_set["label"] = torch.as_tensor(1)
     neg_set["label"] = torch.as_tensor(0)
+
+    #same number of positive/negative samples
+    equalizer = min(len(pos_set),len(neg_set))
+    pos_set = pos_set.sample(frac=1).iloc[:equalizer]
+    neg_set = neg_set.sample(frac=1).iloc[:equalizer]
+
     data = pos_set.append(neg_set)
+    
     data.drop(columns=[0],inplace=True)
     data = data.sample(frac=1)
+    data = data.reset_index()
+    os.chdir('tf_net')
     return data
 
-def get_train_test(data,batchsize=1,split=0.2):
+def get_train_test(data,batchsize=1,folds=5):
     batch_size = batchsize
-    trainset = SeqDataset(data.iloc[:int(len(data)*(1-split))])
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
-    testset = SeqDataset(data.iloc[int(len(data)*(1-split)):])
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=0)
-    return trainloader,testloader
+    train_test_set = []
+    split = 1/folds
 
-# def test_accuracy(tf,net,testloader):
-#     print(tf)
+    for i in range(folds):
+        
+        test_data = data.iloc[i*(int(len(data)*(split))):(i+1)*(int(len(data)*(split)))]
+        testset = SeqDataset(test_data)
+        testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=0)
 
-#     correct = 0
-#     total = 0
-#     classes = [0,1]
-#     correct_pred = {classname: 0 for classname in classes}
-#     total_pred = {classname: 0 for classname in classes}
+        trainset = SeqDataset(data[~data.index.isin(test_data.index)])        
+        trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=0)
+        
+        train_test_set.append((trainloader,testloader))
+    return train_test_set
 
-#     with torch.no_grad():
-#         for data in testloader:
-#             input_key,label_key = data
-#             inputs = data[input_key]
-#             labels = data[label_key]
-#             outputs = net(inputs)
-#             _, predicted = torch.max(outputs.data, 1)
-#             total += labels.size(0)
-#             correct += (predicted == labels).sum().item()
+def test_accuracy(tf,net,testloader):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-#             for label, prediction in zip(labels, predicted):
-#                 if label == prediction:
-#                     correct_pred[classes[label]] += 1
-#                 total_pred[classes[label]] += 1
+    correct = 0
+    total = 0
+    classes = [0,1]
+    correct_pred = {classname: 0 for classname in classes}
+    total_pred = {classname: 0 for classname in classes}
+    total_occ = {classname: 0 for classname in classes}
 
-#     print('Accuracy of the network on the 10000 test images: %d %%' % (100 * correct / total))
+    with torch.no_grad():
+        for data in testloader:
+            input_key,label_key = data
+            inputs = data[input_key]
+            labels = data[label_key]
 
-#     for classname, correct_count in correct_pred.items():
-#         accuracy = 100 * float(correct_count) / total_pred[classname]
-#         print("Accuracy for class {:5f} is: {:.1f} %".format(classname, accuracy))
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = net(inputs)
 
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
 
-def train(tf,net,batchsize=1,split=0.2,epochs=10,subsample=False):
+            for label, prediction in zip(labels, predicted):
+                if label == prediction:
+                    correct_pred[classes[label]] += 1
+                total_pred[classes[prediction]] += 1
+                total_occ[classes[label]] += 1
+
+    eval_text = []
+
+    eval_text.append('\nAccuracy of the network: %d %%' % (100 * correct / total))
+
+    for classname, correct_count in correct_pred.items():
+        if total_occ[classname] > 0:
+            accuracy = 100 * float(correct_count) / total_occ[classname]
+        else:
+            accuracy = 0.0
+        eval_text.append("Accuracy for class {} with {} hits of {} is: {:.1f} %".format(classname, correct_count, total_occ[classname] ,accuracy))
+
+    return eval_text
+
+def train(tf,net,batchsize=1,epochs=10,folds=5,subsample=False,subfolder=""):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     data = create_data(tf,subsample)
-    trainloader,testloader = get_train_test(data,batchsize=batchsize,split=split)
+    train_test_set = get_train_test(data,batchsize=batchsize,folds=folds)
+     
 
     net = net()
     net.to(device)
@@ -115,48 +150,67 @@ def train(tf,net,batchsize=1,split=0.2,epochs=10,subsample=False):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-    pbar = tqdm(total=(epochs*(len(trainloader.dataset)/batchsize)))
+    items = sum([len(x[0]) for x in train_test_set])
+
+    pbar = tqdm(total=(epochs*(items)))
+    loss_list = []
+    eval_text = []
 
     for epoch in range(epochs): 
-        running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
-            
-            input_key,label_key = data
-            inputs = data[input_key]
-            labels = data[label_key]
+        for trainloader,testloader in train_test_set:
+            for i, data in enumerate(trainloader, 0):
+                
+                input_key,label_key = data
+                inputs = data[input_key]
+                labels = data[label_key]
 
-            inputs, labels = inputs.to(device), labels.to(device)            
-            optimizer.zero_grad()
+                inputs, labels = inputs.to(device), labels.to(device)            
+                optimizer.zero_grad()
 
-            outputs = net(inputs)
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+                outputs = net(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
 
-            running_loss += loss.item()
-            pbar.update(1)
+                loss_list.append(loss.item())
+                pbar.update(1)
 
-            if i % 20000 == 19999:  
-                print('[%d, %5d] loss: %.3f' %
-                    (epoch + 1, i + 1, running_loss / 20000))
-                running_loss = 0.0
+            eval_text.append(test_accuracy(tf,net,testloader))
 
+    for i in range(len(train_test_set)):
+        print("\n---- Fold ",i," -----")
+
+        for txt in eval_text[i]:
+            print(txt)
+    
     print('Finished Training', tf)
-    torch.save(net.state_dict(), "tf_net/models/"+tf+".pth")
+    torch.save(net.state_dict(), "models/"+subfolder+tf+".pth")
     pbar.close()
 
-    #test_accuracy(tf,net,testloader)
+    window_size = 100
+    loss_df = pd.DataFrame(loss_list,columns=["loss"])
+    loss_list = loss_df.rolling(window_size)
+
+    plt.figure(figsize=(15,6))
+    plt.plot(loss_list.mean().values[window_size - 1:])
+
+    plt.ylabel("Cross Entropy Loss - Moving average")
+    plt.xlabel("Batch")
+
+    plt.show()
+
+    
 
 
 # def train_all(batchsize=1,split=0.2):
 #     for tf in tfs:
 #         train(tf,batchsize,split)
 
-def get_eval_results(data,net,batchsize=1,split=0.2):
+def get_eval_results(data,net,batchsize=1):
     batch_size = batchsize
     df = pd.DataFrame(data["seq"].apply(lambda x: seq_to_tensor(x)),columns=["seq"])
     df["label"] = data["seq"]
-    testset = SeqDataset(df.iloc[int(len(data)*(1-split)):])
+    testset = SeqDataset(df)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
     pred = []
     label = []
