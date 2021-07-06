@@ -1,8 +1,9 @@
 import pandas as pd
 import os.path
 from tf_net.train_tfnet import get_eval_results
-from tf_net.architectures.BaseNet import Net
+import matplotlib.pyplot as plt
 import torch
+import numpy as np
 
 def get_sequence(tf):
     snps = pd.read_csv("deltasvm/data/selex_allelic_oligos_"+tf+".ref.fa",header=None).iloc[0::2]
@@ -60,15 +61,43 @@ def print_accuary_scores(df):
     print("TF_net accuracy ",round(accuracy_tf_net,3),"%")
     print_class_acc(df,"tf_net")
 
-def eval_binding_acc(tf,batchsize=16,split=1):
+    labels = ['0','1']
+    binding = [len(df[df["binding"]==True]),len(df[df["binding"]==False])]
+    deltasvm = [len(df[(df["binding"]==True) & (df["binding"]==df["ref_binding"])]),len(df[(df["binding"]==False) & (df["binding"]==df["ref_binding"])])]
+    snpnet = [len(df[(df["binding"]==True) & (df["binding"]==df["tf_net"])]),len(df[(df["binding"]==False) & (df["binding"]==df["tf_net"])])]
+
+    x = np.arange(len(labels))
+    width = 0.15
+
+    
+    fig, ax = plt.subplots(figsize=(15,8))    
+
+    rects1 = ax.bar(x - width, binding, width, label='Groundthruth')
+    rects2 = ax.bar(x, deltasvm, width, label='deltasvm')
+    rects3 = ax.bar(x + width, snpnet, width, label='snpnet')
+
+    ax.bar_label(rects1, padding=3)
+    ax.bar_label(rects2, padding=3)
+    ax.bar_label(rects3, padding=3) 
+
+    ax.set_ylabel('#num of occurences')
+    ax.set_title('Prediction comparison')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.legend()
+
+    #fig.tight_layout()
+    plt.show()
+
+def eval_binding_acc(tf,net,batchsize=16):
     print("---",tf,"---")
     dsvm_res = get_results(tf)
     new_binding = get_binding_eval_data("deltasvm/novel_batch.csv",dsvm_res)
     new_binding.drop(["oligo_auc","oligo_pval","pbs","pbs","allele1_bind","allele2_bind"],axis=1,inplace=True)
 
-    net = Net()    
+    net = net()    
     net.load_state_dict(torch.load('tf_net/models/'+tf+'.pth'))
-    tf_net_result = get_eval_results(new_binding,net,batchsize=batchsize,split=split)
+    tf_net_result = get_eval_results(new_binding,net,batchsize=batchsize)
 
     nbc = new_binding.merge(tf_net_result,how='inner',on=["seq"])    
     nbc["ref_binding"] = nbc["ref_binding"].apply(lambda x: x=="Y")
