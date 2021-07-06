@@ -95,6 +95,10 @@ def get_train_test(data,batchsize=1,folds=5):
         train_test_set.append((trainloader,testloader))
     return train_test_set
 
+def f1_score(tp,fp,fn):
+    score = tp/(tp+0.5*(fp+fn))
+    return score
+
 def test_accuracy(tf,net,testloader):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -104,6 +108,10 @@ def test_accuracy(tf,net,testloader):
     correct_pred = {classname: 0 for classname in classes}
     total_pred = {classname: 0 for classname in classes}
     total_occ = {classname: 0 for classname in classes}
+
+    tp=0
+    fp=0
+    fn=0
 
     with torch.no_grad():
         for data in testloader:
@@ -121,13 +129,22 @@ def test_accuracy(tf,net,testloader):
             for label, prediction in zip(labels, predicted):
                 if label == prediction:
                     correct_pred[classes[label]] += 1
+                    
+                    if label == True:
+                        tp+=1     
+                else:
+                    if label == True:
+                        fp+=1   
+                    if label == False:
+                        fn+=1                                     
+                
                 total_pred[classes[prediction]] += 1
                 total_occ[classes[label]] += 1
 
     eval_text = []
 
     eval_text.append('\nAccuracy of the network: %d %%' % (100 * correct / total))
-
+    
     for classname, correct_count in correct_pred.items():
         if total_occ[classname] > 0:
             accuracy = 100 * float(correct_count) / total_occ[classname]
@@ -135,6 +152,7 @@ def test_accuracy(tf,net,testloader):
             accuracy = 0.0
         eval_text.append("Accuracy for class {} with {} hits of {} is: {:.1f} %".format(classname, correct_count, total_occ[classname] ,accuracy))
 
+    f1_score(tp,fp,fn)
     return eval_text
 
 def train(tf,net,batchsize=1,epochs=10,folds=5,subsample=False,subfolder=""):
@@ -199,6 +217,44 @@ def train(tf,net,batchsize=1,epochs=10,folds=5,subsample=False,subfolder=""):
 
     plt.show()
 
+def train_cpu(tf,net,batchsize=1,epochs=10,folds=5,subsample=False,subfolder=""):    
+    data = create_data(tf,subsample)
+    train_test_set = get_train_test(data,batchsize=batchsize,folds=folds)
+     
+
+    net = net()
+        
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
+    items = sum([len(x[0]) for x in train_test_set])
+
+    pbar = tqdm(total=(epochs*(items)))
+    loss_list = []
+    eval_text = []
+
+    for epoch in range(epochs): 
+        for trainloader,testloader in train_test_set:
+            for i, data in enumerate(trainloader, 0):
+                
+                input_key,label_key = data
+                inputs = data[input_key]
+                labels = data[label_key]
+         
+                optimizer.zero_grad()
+
+                outputs = net(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
+                optimizer.step()
+
+                loss_list.append(loss.item())
+                pbar.update(1)
+
+            eval_text.append(test_accuracy(tf,net,testloader))  
+    
+    pbar.close()
+    plt.show()
     
 
 
