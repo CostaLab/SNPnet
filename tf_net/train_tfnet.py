@@ -52,8 +52,8 @@ def create_data(tf,subsample=False):
         os.chdir('tf_net')
     
     if subsample:
-        pos_set = pd.read_csv(pos_file,header=None).iloc[1:20000:2]
-        neg_set = pd.read_csv(neg_file,header=None).iloc[1:20000:2]
+        pos_set = pd.read_csv(pos_file,header=None).iloc[1:80000:2]
+        neg_set = pd.read_csv(neg_file,header=None).iloc[1:80000:2]
     else:
         pos_set = pd.read_csv(pos_file,header=None).iloc[1::2]
         neg_set = pd.read_csv(neg_file,header=None).iloc[1::2]
