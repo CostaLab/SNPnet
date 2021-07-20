@@ -21,6 +21,8 @@ from sklearn.metrics import precision_recall_curve
 from sklearn.metrics import roc_curve
 from sklearn.metrics import f1_score
 
+
+from torch.utils.tensorboard import SummaryWriter
 class SeqDataset(Dataset):
     def __init__(self, data):
         self.data = data        
@@ -268,6 +270,7 @@ def test_accuracy(tf,net,testloader):
 
 def train(tf,net,batchsize=1,epochs=10,folds=5,subsample=False,subfolder="",learning_rate=0.001, momentum=0.9):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    writer = SummaryWriter('logs')    
 
     #pos_set,neg_set = create_data(tf,subsample)
     data = create_data(tf,subsample)
@@ -349,6 +352,7 @@ def train(tf,net,batchsize=1,epochs=10,folds=5,subsample=False,subfolder="",lear
 
             pbar.update(items*batchsize)
         
+        writer.add_graph(nets[0], inputs)
         f1_curve_train.append(np.mean(f1_train))
         f1_curve_test.append(np.mean(f1_test))
 
@@ -358,6 +362,7 @@ def train(tf,net,batchsize=1,epochs=10,folds=5,subsample=False,subfolder="",lear
         loss_curve_train.extend(train_loss)
         loss_curve_test.extend(test_loss)
 
+
     #for i in range(len(train_test_set)):
     #    print("\n---- Fold ",i," -----")
 
@@ -365,8 +370,8 @@ def train(tf,net,batchsize=1,epochs=10,folds=5,subsample=False,subfolder="",lear
     #        print(txt)
     
     print('Finished Training', tf)    
-    pbar.close()
-
+    pbar.close()    
+    writer.close()
     #window_size = 100
     #loss_df = pd.DataFrame(loss_list,columns=["loss"])
     #loss_list = loss_df.rolling(window_size)

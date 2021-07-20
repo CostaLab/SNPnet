@@ -155,3 +155,5 @@ deltasvm/old_batch.csv
 
 cluster_scripts/data/*
 cluster_scripts/architectures/*
+
+tf_net/logs
