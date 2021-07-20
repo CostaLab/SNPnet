@@ -152,3 +152,6 @@ snake/selex_seqs/*
 
 deltasvm/novel_batch.csv
 deltasvm/old_batch.csv
+
+cluster_scripts/data/*
+cluster_scripts/architectures/*
