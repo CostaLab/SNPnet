@@ -14,7 +14,7 @@ class BPnetalike(nn.Module):
         self.fc1 = nn.Linear(592, 160)
         self.fc2 = nn.Linear(160, 80)
         self.fc3 = nn.Linear(80, 16)
-        self.fc4 = nn.Linear(16, 2)
+        self.fc4 = nn.Linear(16, 1)
 
     def forward(self, x):
         x = F.relu(self.conv1(x.float()))

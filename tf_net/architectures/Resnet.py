@@ -11,7 +11,7 @@ class Resnet(nn.Module):
         self.conv2 = nn.Conv2d(in_channels=oc, out_channels=oc, kernel_size=3, stride=1, padding=1)
         
         
-        self.classifier = nn.Linear(in_features=oc*40*4,out_features=2)
+        self.classifier = nn.Linear(in_features=oc*40*4,out_features=1)
 
 
     def forward(self, x):
