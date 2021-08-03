@@ -10,7 +10,7 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
-from sklearn.metrics import f1_score,precision_recall_curve,roc_curve
+from sklearn.metrics import precision_recall_curve,auc
 from sklearn import preprocessing
 
 class Net(nn.Module):
@@ -78,8 +78,6 @@ class Resnet2(nn.Module):
         
         self.classifier = nn.Linear(in_features=160,out_features=1)
 
-
-
     def res_block_40(self,input):
         res = input
         out = F.relu(self.conv40_1(res))
@@ -113,6 +111,76 @@ class Resnet2(nn.Module):
 
         return out
 
+
+class Resnet3(nn.Module):
+    def __init__(self):
+        super().__init__()
+        ni = 1
+        oc = 32*ni
+
+        self.conv1 = nn.Conv2d(in_channels=ni, out_channels=oc, kernel_size=4, stride=1, padding='same')
+
+        self.conv40_1 = nn.Conv2d(in_channels=oc, out_channels=oc, kernel_size=4, stride=1, padding='same')
+        self.conv40_2 = nn.Conv2d(in_channels=oc, out_channels=oc, kernel_size=4, stride=1, padding='same')
+        self.pool40 = nn.AvgPool2d(kernel_size=4, stride=2,padding=2)
+        
+        
+        self.deepen = nn.Conv2d(in_channels=oc, out_channels=2*oc, kernel_size=4, stride=1, padding='same')
+        oc = 2*oc 
+
+        self.conv20_1 = nn.Conv2d(in_channels=oc, out_channels=oc, kernel_size=2, stride=1, padding='same')
+        self.conv20_2 = nn.Conv2d(in_channels=oc, out_channels=oc, kernel_size=2, stride=1, padding='same')
+        self.pool20 = nn.AvgPool2d(kernel_size=2, stride=2,padding=1)
+
+        self.fcc1 = nn.Linear(in_features=1408,out_features=280)
+        self.fcc2 = nn.Linear(in_features=280,out_features=160)
+        self.fcc3 = nn.Linear(in_features=160,out_features=80)
+        
+        self.classifier = nn.Linear(in_features=80,out_features=1)
+
+    def res_block_40(self,input):
+        res = input
+        out = F.relu(self.conv40_1(res))
+        out = F.relu(self.conv40_2(out))
+        out += res
+        
+        
+        return out
+
+    def res_block_20(self,input):
+        res = input
+        out = F.relu(self.conv20_1(res))
+        out = F.relu(self.conv20_2(out))
+        out += res
+        
+        
+        return out
+
+    def forward(self, x):
+        input = x.float()
+        out = F.relu(self.conv1(input))
+
+        out = self.res_block_40(out)
+        out = self.res_block_40(out)
+        out = self.res_block_40(out)
+
+        out = self.deepen(out)
+        out = self.pool40(out)
+
+        out = self.res_block_20(out)
+        out = self.res_block_20(out)
+
+        out = self.pool20(out)
+        
+        out = torch.flatten(out, 1)
+        out = self.fcc1(out)
+        out = self.fcc2(out)
+        out = self.fcc3(out)
+        out = self.classifier(out)
+
+        return out
+
+
 class SeqDataset(Dataset):
     def __init__(self, data):
         self.data = data        
@@ -138,12 +206,20 @@ def seq_to_tensor(seq):
 
 def create_data(tf,subsample=False):
     try:
-        pos_file = glob.glob('snpnet/cluster_scripts/data/selex_seqs/'+tf+'*_4_*.flt.fa')
+        pos_file = glob.glob('/hpcwork/rwth0776/snp-selex/deltasvm/selex_seqs/'+tf+'*_4_*.flt.fa')
         pos_file = pos_file[0]
-        neg_file = glob.glob('snpnet/cluster_scripts/data/random_seqs/'+tf+'*_4_*.flt.fa')
+        neg_file = glob.glob('/hpcwork/rwth0776/snp-selex/deltasvm/random_seqs/'+tf+'*_4_*.flt.fa')
         neg_file = neg_file[0]
     except:
         print("failed to load data")
+
+    # try:
+    #     pos_file = glob.glob('D:/SNPnet/Data/selex_seqs/'+tf+'*_4_*.flt.fa')
+    #     pos_file = pos_file[0]
+    #     neg_file = glob.glob('D:/SNPnet/Data/random_seqs/'+tf+'*_4_*.flt.fa')
+    #     neg_file = neg_file[0]
+    # except:
+    #     print("failed to load data")
     
     if subsample:
         pos_set = pd.read_csv(pos_file,header=None).iloc[1:1000:2]
@@ -190,52 +266,15 @@ def get_train_test(data, batchsize=1,folds=5):
         train_test_set.append((trainloader,testloader))
     return train_test_set
 
-def loader_f1_score(net,loader,device):
-    with torch.no_grad():
-        for data in loader:
-            input_key,label_key = data
-            inputs = data[input_key]
-            labels = data[label_key]
 
-            inputs, labels = inputs.to(device), labels.to(device)
-            outputs = net(inputs)
-
-    dis_output = [x > 0.5 for x in torch.sigmoid(outputs.data).cpu().detach().numpy()]
-    f1 = f1_score(labels.cpu().detach().numpy(), dis_output, average='binary',zero_division=0)
-    
-    return f1
-
-def best_net_f1(nets,train_test_set):
-    max_f1 = 0
-    max_index = 0
-    for i in range(len(train_test_set)):
-        device = torch.device("cpu")
-        _,testloader = train_test_set[i]
-
-        with torch.no_grad():
-            for data in testloader:
-                input_key,label_key = data
-                inputs = data[input_key]
-                labels = data[label_key]
-
-                inputs, labels = inputs.to(device), labels.to(device)
-                outputs = nets[i](inputs)
-
-        dis_output = [x > 0.5 for x in torch.sigmoid(outputs.data).cpu().detach().numpy()]
-        f1 = f1_score(labels.cpu().detach().numpy(), dis_output, average='binary')
-
-        if f1 > max_f1:
-            max_f1 = f1
-            max_index = i
-    
-    return nets[max_index]
-
-def final_folds(nets,train_test_set,device):
-    roc_curves = []
+def aupr(nets,train_test_set,device):
     pr_recalls = []
+    aupr = []
 
     for fold in range(len(train_test_set)): 
         _,testloader = train_test_set[fold]
+        predictions = []
+        ground_truth = []
 
         with torch.no_grad():
             for data in testloader:
@@ -246,29 +285,31 @@ def final_folds(nets,train_test_set,device):
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = nets[fold](inputs)
 
-        labels = labels.cpu().detach().numpy()
-        outputs = torch.sigmoid(outputs.data).cpu().detach().numpy()
+                ground_truth.extend(list(labels.cpu().detach().numpy()))
+                predictions.extend(torch.sigmoid(outputs.data).cpu().detach().numpy())
 
-        precision, recall, thresholds = precision_recall_curve(labels,outputs)
+        predictions = [item for sublist in predictions for item in sublist]
+
+        precision, recall, _ = precision_recall_curve(ground_truth,predictions)
         pr_recalls.append((recall,precision))
+        aupr.append(auc(recall, precision))
 
-        fpr, tpr, thresholds = roc_curve(labels,outputs)
-        roc_curves.append((fpr, tpr))
-
-    return pr_recalls,roc_curves
+    return pr_recalls,aupr
 
 def train(tf,net,architecture,batchsize=1,epochs=10,folds=5,subsample=False,learning_rate=0.001, momentum=0.9):        
-    device = torch.device("cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     data = create_data(tf,subsample)
     train_test_set = get_train_test(data,batchsize=batchsize,folds=folds)
      
     nets = {}
     optimizers = {}
+    scheduler = {}
     for fold in range(len(train_test_set)):
         nets[fold] = net()
         nets[fold].to(device)
         optimizers[fold] = optim.SGD(nets[fold].parameters(), lr=learning_rate, momentum=momentum)
+        scheduler[fold] = optim.lr_scheduler.ReduceLROnPlateau(optimizers[fold],patience=5)
 
     
     criterion = nn.BCEWithLogitsLoss()
@@ -277,16 +318,13 @@ def train(tf,net,architecture,batchsize=1,epochs=10,folds=5,subsample=False,lear
     pbar = tqdm(total=(epochs*len(train_test_set)*items*batchsize))
     loss_curve_train = []
     loss_curve_test = []
-    f1_curve_train = []
-    f1_curve_test = []
-
-    window_size = 100
+    pr = []
+    au_pr = []
+    window_size = 2500
 
     for epoch in range(epochs): 
         train_loss = []
         test_loss = []
-        f1_train = []
-        f1_test = []
         for fold in range(len(train_test_set)):
             trainloader,testloader = train_test_set[fold]
             for i, data in enumerate(trainloader, 0):
@@ -321,43 +359,50 @@ def train(tf,net,architecture,batchsize=1,epochs=10,folds=5,subsample=False,lear
 
                     if fold == 0:
                         test_loss.append(loss.item())
-                
-            
 
-            f1_train.append(loader_f1_score(nets[fold],trainloader,device))
-            f1_test.append(loader_f1_score(nets[fold],testloader,device))
+            scheduler[fold].step(loss)
             pbar.update(items*batchsize)
-
-        
-        
-        f1_curve_train.append(np.mean(f1_train))
-        f1_curve_test.append(np.mean(f1_test))
 
         loss_curve_train.extend(train_loss)
         loss_curve_test.extend(test_loss)
 
-        if epoch%10 == 9:
-            train_ma = pd.DataFrame(loss_curve_train,columns=["loss"]).rolling(window_size)
-            test_ma = pd.DataFrame(loss_curve_test,columns=["loss"]).rolling(window_size)
+        train_ma = pd.DataFrame(loss_curve_train,columns=["loss"]).rolling(window_size)
+        test_ma = pd.DataFrame(loss_curve_test,columns=["loss"]).rolling(window_size)
 
-            loss_curve_train_ma = list(train_ma.mean().values[window_size - 1:])
-            loss_curve_test_ma = list(test_ma.mean().values[window_size - 1:])
+        loss_curve_train_ma = list(train_ma.mean().values[window_size - 1:])
+        loss_curve_test_ma = list(test_ma.mean().values[window_size - 1:])
 
-            pr_recalls,roc_curves = final_folds(nets,train_test_set,device)
+        if epoch%5 == 0:
+            pr_recalls,auc_prc = aupr(nets,train_test_set,device)
+
+            pr.append(pr_recalls)
+            au_pr.append(auc_prc)
 
             results = {"tf":tf,
                         "architecture":architecture,
                         "epoch": epoch,
                         "loss_curve_train": loss_curve_train_ma,
-                        "loss_curve_test": loss_curve_test_ma,
-                        "f1_curve_train": f1_curve_train,
-                        "f1_curve_test": f1_curve_test,                
-                        "pr_recalls": pr_recalls,
-                        "roc_curves": roc_curves,
-                        "best_net":best_net_f1(nets,train_test_set)}
+                        "loss_curve_test": loss_curve_test_ma,                        
+                        "pr_recalls": pr,
+                        "aupr": au_pr,
+                        }
 
-            with open(tf+'_'+architecture+'_results.pickle', 'wb') as handle:
-                pickle.dump(results, handle)
+    pr_recalls,auc_prc = aupr(nets,train_test_set,device)
+    pr.append(pr_recalls)
+    au_pr.append(auc_prc)
+
+    results = {
+                "tf":tf,
+                "architecture":architecture,
+                "epoch": epoch,
+                "loss_curve_train": loss_curve_train_ma,
+                "loss_curve_test": loss_curve_test_ma,                        
+                "pr_recalls": pr,
+                "aupr": au_pr,
+                }
+
+    with open("/work/mf735606/results_resnet3/"+tf+'.pickle', 'wb') as handle:
+        pickle.dump(results, handle)
 
     pbar.close()
     print('Finished Training', tf)    
@@ -368,14 +413,15 @@ import sys
 import os
 
 tf = sys.argv[1]
-architecture = sys.argv[2]
+#architecture = sys.argv[2]
 
-if architecture == "net":
-    net=Net
-if architecture == "resnet":
-    net=Resnet
-if architecture == "resnet2":
-    net=Resnet2
+# if architecture == "net":
+#     net=Net
+# if architecture == "resnet":
+#     net=Resnet
+# if architecture == "resnet2":
+#     net=Resnet2
 
+net=Resnet3
 
-train(tf,net,architecture=architecture,batchsize=8,epochs=100,folds=2,subsample=False)
+train(tf,net,architecture="resnet3",batchsize=8,epochs=15,folds=5,subsample=False)
